@@ -32,12 +32,12 @@ import os
 load_dotenv()
 
 logger = logging.getLogger(__name__)
-FREE_TEST_API_KEY = os.getenv("FREE_TEST_API_KEY")
-BASE_URL = os.getenv("BASE_URL")
-DEFAULT_TIMEOUT_SECONDS = os.getenv("DEFAULT_TIMEOUT_SECONDS")
-DEFAULT_MAX_RETRIES = os.getenv("DEFAULT_MAX_RETRIES")
-RATE_LIMIT_STATUS_CODE = os.getenv("RATE_LIMIT_STATUS_CODE")
-RATE_LIMIT_BACKOFF_SECONDS = os.getenv("RATE_LIMIT_BACKOFF_SECONDS")
+FREE_TEST_API_KEY = os.getenv("FREE_TEST_API_KEY", "3")
+BASE_URL = os.getenv("BASE_URL", "https://www.thesportsdb.com/api/v1/json")
+DEFAULT_TIMEOUT_SECONDS = int(os.getenv("DEFAULT_TIMEOUT_SECONDS", "10"))
+DEFAULT_MAX_RETRIES = int(os.getenv("DEFAULT_MAX_RETRIES", "3"))
+RATE_LIMIT_STATUS_CODE = int(os.getenv("RATE_LIMIT_STATUS_CODE", "429"))
+RATE_LIMIT_BACKOFF_SECONDS = int(os.getenv("RATE_LIMIT_BACKOFF_SECONDS", "2"))
 
 
 class SportsAPIError(Exception):

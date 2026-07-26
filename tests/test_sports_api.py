@@ -12,8 +12,15 @@ Jalankan dengan: python -m unittest tests/test_sports_api.py -v
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
 import unittest
 from unittest.mock import MagicMock, patch
+
+# Tambahkan root folder project ke sys.path agar bisa dijalankan langsung lewat tombol Run di VSCode
+project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 from services.sports_api import (
     Event,
@@ -117,7 +124,7 @@ class TheSportsDBClientErrorHandlingTestCase(unittest.TestCase):
         }]})
         self.session.get.side_effect = [rate_limited_response, success_response]
 
-        with patch("bot.services.sports_api.time.sleep") as mock_sleep:
+        with patch("services.sports_api.time.sleep") as mock_sleep:
             team = client.search_team("Arsenal")
 
         self.assertEqual(team.name, "Arsenal")
@@ -127,7 +134,7 @@ class TheSportsDBClientErrorHandlingTestCase(unittest.TestCase):
         client = TheSportsDBClient(session=self.session, max_retries=1)
         self.session.get.return_value = make_response(status_code=429)
 
-        with patch("bot.services.sports_api.time.sleep"):
+        with patch("services.sports_api.time.sleep"):
             with self.assertRaises(RateLimitExceededError):
                 client.search_team("Arsenal")
 
