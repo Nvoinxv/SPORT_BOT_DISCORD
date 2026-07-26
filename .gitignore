@@ -1,1 +1,16 @@
-migrations/.env
+# Environments
+.env
+myenv/
+env/
+venv/
+.venv/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Docker
+docker-compose.override.yml
