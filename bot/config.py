@@ -8,6 +8,9 @@ DISCORD_TOKEN = os.getenv("DISCORD_AKUN_API")
 if not DISCORD_TOKEN:
     raise ValueError("DISCORD_AKUN_API is missing from environment variables!")
 
+# Gemini settings
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
 # MongoDB settings
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/sportbot")
 DB_NAME = "sportbot"

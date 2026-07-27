@@ -59,7 +59,8 @@ class NotifierService:
             channel = self.bot.get_channel(sub.channel_id)
             if channel:
                 try:
-                    await channel.send(embed=embed)
+                    # Mengirim notifikasi dengan mention everyone sesuai permintaan
+                    await channel.send(content="@everyone 📢 Reminder Pertandingan!", embed=embed)
                     logger.info(f"Sent reminder for {event.id} to channel {channel.id}")
                 except discord.DiscordException as e:
                     logger.error(f"Failed to send to {sub.channel_id}: {e}")
