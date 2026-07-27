@@ -1,0 +1,50 @@
+# --- Virtual environment ---
+myenv/
+venv/
+.venv/
+env/
+
+# --- Environment variables / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Python bytecode & cache ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+
+# --- Testing / coverage ---
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# --- Type checker / linter cache ---
+.mypy_cache/
+.ruff_cache/
+
+# --- Database files (kalau pakai SQLite lokal, sesuaikan dengan db/) ---
+*.sqlite3
+*.db
+
+# --- Migrations tooling (Docker/pyproject di folder migrations/) ---
+migrations/.env
+migrations/*.log
+
+# --- Logs ---
+*.log
+logs/
+
+# --- OS / editor junk ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# --- Distribution / build ---
+build/
+dist/
+*.egg
