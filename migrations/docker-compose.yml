@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  beatrice-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sport_bot_asistence:latest
+    container_name: sport_bot_asistence
+    restart: always
+
+    env_file:
+      - .env
+
+    environment:
+      - TZ=Asia/Jakarta
+      - PYTHONUNBUFFERED=1
+
+    volumes:
+      - ./logs:/app/logs
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      - beatrice-network
+      - shared_mongo_net
+
+  mongo:
+    image: mongo
+    container_name: sport_bot_mongo
+    restart: always
+    ports:
+      - "27018:27017"
+
+    networks:
+      - shared_mongo_net
+
+networks:
+  beatrice-network:
+    name: sport_net
+    driver: bridge
+
+  shared_mongo_net:
+    external: true
+    name: shared_mongo_net
