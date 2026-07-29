@@ -1,0 +1,14 @@
+# Abaikan file lokal rahasia & log saat build Docker image
+.env
+logs/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.git/
+.gitignore
+venv/
+env/
+.idea/
+.vscode/
+*.log
