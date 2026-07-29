@@ -19,6 +19,10 @@ services:
     volumes:
       - ./logs:/app/logs
 
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+
     logging:
       driver: "json-file"
       options:
