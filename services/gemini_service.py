@@ -9,7 +9,7 @@ class GeminiService:
         if GEMINI_API_KEY:
             try:
                 genai.configure(api_key=GEMINI_API_KEY)
-                self.model = genai.GenerativeModel('gemini-1.5-flash')
+                self.model = genai.GenerativeModel('gemini-3.5-flash')
                 self.is_ready = True
                 logger.info("Gemini AI is ready.")
             except Exception as e:
