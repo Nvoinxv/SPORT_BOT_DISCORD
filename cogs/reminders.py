@@ -104,7 +104,7 @@ class RemindersCog(commands.Cog):
         admin_cog = self.bot.get_cog("AdminCog")
         if admin_cog and hasattr(admin_cog, "scheduler"):
             # Trigger notifier secara asinkron (di-await) agar kita tahu saat selesai
-            await admin_cog.scheduler.notifier.check_and_notify()
+            await admin_cog.scheduler.notifier.check_and_notify(is_startup=True)
             await interaction.followup.send("✅ Pengecekan manual selesai. Notifikasi telah dikirim ke channel yang sesuai jika ada jadwal yang cocok.")
         else:
             await interaction.followup.send("❌ Gagal menemukan layanan Notifier/Scheduler yang berjalan.", ephemeral=True)

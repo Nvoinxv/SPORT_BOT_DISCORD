@@ -24,4 +24,4 @@ class ReminderLoop:
         logger.info("Scheduler is ready and waiting for loops.")
         # Memicu output langsung saat bot pertama kali jalan (deploy)
         logger.info("Triggering initial check immediately on deploy...")
-        await self.notifier.check_and_notify()
+        await self.notifier.check_and_notify(is_startup=True)

@@ -11,7 +11,7 @@ class NotifierService:
         self.repo = SubscriptionRepository()
         self.api = TheSportsDBClient()
 
-    async def check_and_notify(self):
+    async def check_and_notify(self, is_startup: bool = False):
         logger.info("Running check_and_notify task...")
         subs = await self.repo.get_all_subscriptions()
         
@@ -32,18 +32,21 @@ class NotifierService:
                 event_time = event.kickoff_utc.replace(tzinfo=timezone.utc)
                 time_diff = event_time - now
                 
-                # Send reminder if match is strictly in the next 24 hours
-                if timedelta(0) < time_diff <= timedelta(days=1):
-                    await self._notify_subscribers(team_id, event, subs)
+                # Send reminder if match is strictly in the next 24 hours OR if it's a startup/manual trigger
+                if is_startup or (timedelta(0) < time_diff <= timedelta(days=1)):
+                    await self._notify_subscribers(team_id, event, subs, is_startup)
             except Exception as e:
                 logger.error(f"Error checking team {team_id}: {e}")
 
-    async def _notify_subscribers(self, team_id: str, event, all_subs):
+    async def _notify_subscribers(self, team_id: str, event, all_subs, is_startup: bool = False):
         team_subs = [s for s in all_subs if s.team_id == team_id]
         
+        title = "🚀 Bot Restarted | Jadwal Terdekat" if is_startup else "⚽ Pertandingan Semakin Dekat!"
+        desc = f"**{event.name}**"
+        
         embed = discord.Embed(
-            title="⚽ Pertandingan Semakin Dekat!",
-            description=f"**{event.name}** akan segera dimulai!",
+            title=title,
+            description=desc,
             color=0x1ABC9C # Professional Turquoise color
         )
         embed.add_field(name="📅 Tanggal", value=event.date, inline=True)
@@ -59,8 +62,9 @@ class NotifierService:
             channel = self.bot.get_channel(sub.channel_id)
             if channel:
                 try:
-                    # Mengirim notifikasi dengan mention everyone sesuai permintaan
-                    await channel.send(content="@everyone 📢 Reminder Pertandingan!", embed=embed)
+                    # Mengirim notifikasi dengan mention everyone sesuai permintaan, KECUALI saat startup
+                    content = "📢 **Status Update Bot**" if is_startup else "@everyone 📢 Reminder Pertandingan!"
+                    await channel.send(content=content, embed=embed)
                     logger.info(f"Sent reminder for {event.id} to channel {channel.id}")
                 except discord.DiscordException as e:
                     logger.error(f"Failed to send to {sub.channel_id}: {e}")
