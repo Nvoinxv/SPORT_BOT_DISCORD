@@ -16,7 +16,19 @@ class NotifierService:
         subs = await self.repo.get_all_subscriptions()
         
         if not subs:
+            logger.info("No subscriptions found in DB. Bot has nowhere to send output.")
             return
+
+        # Kirim sapaan awal ke semua channel yang punya subscription jika baru deploy
+        if is_startup:
+            unique_channels = set(sub.channel_id for sub in subs)
+            for ch_id in unique_channels:
+                channel = self.bot.get_channel(ch_id)
+                if channel:
+                    try:
+                        await channel.send("🚀 **Bot berhasil di-deploy!** Sedang mengecek jadwal tim yang di-subscribe...")
+                    except discord.DiscordException as e:
+                        logger.error(f"Failed to send startup greeting to {ch_id}: {e}")
 
         # Group by team to avoid spamming the API
         teams_to_check = set(sub.team_id for sub in subs)
@@ -25,7 +37,10 @@ class NotifierService:
             try:
                 # Run blocking API call in a thread
                 event = await asyncio.to_thread(self.api.get_next_event_for_team, team_id)
+                
                 if not event or not event.kickoff_utc:
+                    if is_startup:
+                        await self._notify_no_event(team_id, subs)
                     continue
                 
                 now = datetime.now(timezone.utc)
@@ -38,10 +53,30 @@ class NotifierService:
             except Exception as e:
                 logger.error(f"Error checking team {team_id}: {e}")
 
+    async def _notify_no_event(self, team_id: str, all_subs):
+        team_subs = [s for s in all_subs if s.team_id == team_id]
+        if not team_subs:
+            return
+            
+        team_name = team_subs[0].team_name
+        embed = discord.Embed(
+            title="📅 Jadwal Belum Tersedia",
+            description=f"Saat ini tidak ada jadwal kandang terdekat untuk **{team_name}** di database API.",
+            color=0x95A5A6
+        )
+        
+        for sub in team_subs:
+            channel = self.bot.get_channel(sub.channel_id)
+            if channel:
+                try:
+                    await channel.send(embed=embed)
+                except discord.DiscordException:
+                    pass
+
     async def _notify_subscribers(self, team_id: str, event, all_subs, is_startup: bool = False):
         team_subs = [s for s in all_subs if s.team_id == team_id]
         
-        title = "🚀 Bot Restarted | Jadwal Terdekat" if is_startup else "⚽ Pertandingan Semakin Dekat!"
+        title = "🚀 Jadwal Ditemukan!" if is_startup else "⚽ Pertandingan Semakin Dekat!"
         desc = f"**{event.name}**"
         
         embed = discord.Embed(
@@ -63,7 +98,7 @@ class NotifierService:
             if channel:
                 try:
                     # Mengirim notifikasi dengan mention everyone sesuai permintaan, KECUALI saat startup
-                    content = "📢 **Status Update Bot**" if is_startup else "@everyone 📢 Reminder Pertandingan!"
+                    content = "📢 **Status Jadwal Terdekat**" if is_startup else "@everyone 📢 Reminder Pertandingan!"
                     await channel.send(content=content, embed=embed)
                     logger.info(f"Sent reminder for {event.id} to channel {channel.id}")
                 except discord.DiscordException as e:
