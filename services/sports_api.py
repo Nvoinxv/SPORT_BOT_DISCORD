@@ -5,23 +5,17 @@ Modul ini adalah SATU-SATUNYA pintu ke API eksternal TheSportsDB.
 Semua kode lain (cogs, scheduler, service lain) wajib memanggil lewat
 class `TheSportsDBClient` di sini, bukan lewat `requests` langsung.
 
-Batasan tier gratis TheSportsDB yang sengaja ditangani di modul ini:
-- Rate limit: 30 request/menit per key.
-- Key gratis ("123") adalah shared test key, bukan key pribadi.
-- Endpoint jadwal per tim (next/last event) hanya mengembalikan 1 hasil,
-  dan versi gratis hanya menampilkan event kandang (home).
-- Tidak ada live score cepat (fitur premium).
-
-Karena keterbatasan di atas, client ini didesain untuk kasus "reminder
-pertandingan berikutnya per tim", bukan untuk menarik jadwal satu musim
-penuh sekaligus.
+Sumber data yang didukung untuk mode otomatis:
+- Sepak bola: English Premier League (league ID 4328)
+- Basket: NBA (league ID 4387)
+- Tenis: ATP Tour (league ID 4424)
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -38,6 +32,16 @@ DEFAULT_TIMEOUT_SECONDS = int(os.getenv("DEFAULT_TIMEOUT_SECONDS", "10"))
 DEFAULT_MAX_RETRIES = int(os.getenv("DEFAULT_MAX_RETRIES", "3"))
 RATE_LIMIT_STATUS_CODE = int(os.getenv("RATE_LIMIT_STATUS_CODE", "429"))
 RATE_LIMIT_BACKOFF_SECONDS = int(os.getenv("RATE_LIMIT_BACKOFF_SECONDS", "2"))
+
+# -----------------------------------------------------------------------
+# Sumber data untuk mode loop otomatis.
+# Setiap entry adalah dict dengan keys: name, sport, league_id.
+# -----------------------------------------------------------------------
+AUTO_SOURCES = [
+    {"name": "English Premier League", "sport": "Soccer",  "league_id": "4328"},
+    {"name": "NBA",                     "sport": "Basketball", "league_id": "4387"},
+    {"name": "ATP Tour",                "sport": "Tennis",  "league_id": "4424"},
+]
 
 
 class SportsAPIError(Exception):
@@ -78,8 +82,11 @@ class Event:
     id: str
     name: str
     league: str | None
+    sport: str | None
     home_team: str | None
     away_team: str | None
+    home_score: str | None
+    away_score: str | None
     date: str | None  # format "YYYY-MM-DD" sesuai response API
     time: str | None  # format "HH:MM:SS" UTC sesuai response API
     venue: str | None
@@ -90,8 +97,11 @@ class Event:
             id=raw["idEvent"],
             name=raw.get("strEvent", "Unknown Event"),
             league=raw.get("strLeague"),
+            sport=raw.get("strSport"),
             home_team=raw.get("strHomeTeam"),
             away_team=raw.get("strAwayTeam"),
+            home_score=raw.get("intHomeScore"),
+            away_score=raw.get("intAwayScore"),
             date=raw.get("dateEvent"),
             time=raw.get("strTime"),
             venue=raw.get("strVenue"),
@@ -158,6 +168,18 @@ class TheSportsDBClient:
         if not events:
             return None
         return Event.from_raw(events[0])
+
+    def get_latest_events_for_league(self, league_id: str) -> list[Event]:
+        """
+        Ambil daftar pertandingan terbaru (sudah selesai) dari sebuah liga.
+
+        Digunakan untuk mode loop otomatis agar bot bisa memilih event
+        secara acak tanpa bergantung pada input user.
+        Endpoint: /eventspastleague.php?id=<league_id>
+        """
+        data = self._get("eventspastleague.php", params={"id": league_id})
+        events = data.get("events") or []
+        return [Event.from_raw(e) for e in events]
 
     def _get(self, endpoint: str, params: dict[str, Any]) -> dict[str, Any]:
         """

@@ -1,105 +1,143 @@
+"""
+NotifierService — Mode Otomatis (Full Loop, Tanpa Subscription User)
+
+Bot memilih satu sumber olahraga secara acak dari AUTO_SOURCES
+(EPL, NBA, ATP), lalu mengambil data pertandingan terbaru dari liga itu,
+memilih 1 event secara acak, dan mengirim ringkasan AI ke CHANNEL_ID
+yang sudah di-set di file .env.
+
+Tidak ada ketergantungan pada data subscription user di MongoDB.
+"""
+
 import asyncio
+import random
 from datetime import datetime, timezone, timedelta
+
 import discord
-from db.repository import SubscriptionRepository
-from services.sports_api import TheSportsDBClient
+
+from bot.config import CHANNEL_ID
+from services.sports_api import TheSportsDBClient, AUTO_SOURCES
+from services.gemini_service import GeminiService
 from utils.logger import logger
+
+
+SPORT_EMOJIS = {
+    "Soccer":     "⚽",
+    "Basketball": "🏀",
+    "Tennis":     "🎾",
+}
+
 
 class NotifierService:
     def __init__(self, bot: discord.Client):
         self.bot = bot
-        self.repo = SubscriptionRepository()
         self.api = TheSportsDBClient()
+        self.ai = GeminiService()
 
+    # ------------------------------------------------------------------
+    # Entry point utama — dipanggil oleh scheduler maupun saat startup.
+    # ------------------------------------------------------------------
     async def check_and_notify(self, is_startup: bool = False):
-        logger.info("Running check_and_notify task...")
-        subs = await self.repo.get_all_subscriptions()
-        
-        if not subs:
-            logger.info("No subscriptions found in DB. Bot has nowhere to send output.")
+        label = "STARTUP" if is_startup else "SCHEDULER"
+        logger.info(f"[{label}] check_and_notify dipanggil.")
+
+        channel = self.bot.get_channel(CHANNEL_ID)
+        if not channel:
+            logger.error(
+                f"Channel ID {CHANNEL_ID} tidak ditemukan. "
+                "Pastikan DISCORD_ID_CHANNEL_SEPUTAR_SEPATU sudah benar di .env "
+                "dan bot sudah di-invite ke server dengan izin yang cukup."
+            )
             return
 
-        # Kirim sapaan awal ke semua channel yang punya subscription jika baru deploy
-        if is_startup:
-            unique_channels = set(sub.channel_id for sub in subs)
-            for ch_id in unique_channels:
-                channel = self.bot.get_channel(ch_id)
-                if channel:
-                    try:
-                        await channel.send("🚀 **Bot berhasil di-deploy!** Sedang mengecek jadwal tim yang di-subscribe...")
-                    except discord.DiscordException as e:
-                        logger.error(f"Failed to send startup greeting to {ch_id}: {e}")
+        # Pilih sumber secara acak (EPL / NBA / ATP)
+        source = random.choice(AUTO_SOURCES)
+        league_name = source["name"]
+        sport = source["sport"]
+        league_id = source["league_id"]
+        emoji = SPORT_EMOJIS.get(sport, "🏅")
 
-        # Group by team to avoid spamming the API
-        teams_to_check = set(sub.team_id for sub in subs)
-        
-        for team_id in teams_to_check:
-            try:
-                # Run blocking API call in a thread
-                event = await asyncio.to_thread(self.api.get_next_event_for_team, team_id)
-                
-                if not event or not event.kickoff_utc:
-                    if is_startup:
-                        await self._notify_no_event(team_id, subs)
-                    continue
-                
-                now = datetime.now(timezone.utc)
-                event_time = event.kickoff_utc.replace(tzinfo=timezone.utc)
-                time_diff = event_time - now
-                
-                # Send reminder if match is strictly in the next 24 hours OR if it's a startup/manual trigger
-                if is_startup or (timedelta(0) < time_diff <= timedelta(days=1)):
-                    await self._notify_subscribers(team_id, event, subs, is_startup)
-            except Exception as e:
-                logger.error(f"Error checking team {team_id}: {e}")
+        logger.info(f"[{label}] Sumber terpilih: {league_name} ({sport})")
 
-    async def _notify_no_event(self, team_id: str, all_subs):
-        team_subs = [s for s in all_subs if s.team_id == team_id]
-        if not team_subs:
-            return
-            
-        team_name = team_subs[0].team_name
-        embed = discord.Embed(
-            title="📅 Jadwal Belum Tersedia",
-            description=f"Saat ini tidak ada jadwal kandang terdekat untuk **{team_name}** di database API.",
-            color=0x95A5A6
+        # Kirim pesan "sedang memproses" agar channel terlihat ada aktivitas
+        status_msg = await channel.send(
+            f"{emoji} **Mengambil berita {league_name} terbaru...** ⏳"
         )
-        
-        for sub in team_subs:
-            channel = self.bot.get_channel(sub.channel_id)
-            if channel:
-                try:
-                    await channel.send(embed=embed)
-                except discord.DiscordException:
-                    pass
 
-    async def _notify_subscribers(self, team_id: str, event, all_subs, is_startup: bool = False):
-        team_subs = [s for s in all_subs if s.team_id == team_id]
-        
-        title = "🚀 Jadwal Ditemukan!" if is_startup else "⚽ Pertandingan Semakin Dekat!"
-        desc = f"**{event.name}**"
-        
-        embed = discord.Embed(
-            title=title,
-            description=desc,
-            color=0x1ABC9C # Professional Turquoise color
-        )
-        embed.add_field(name="📅 Tanggal", value=event.date, inline=True)
-        embed.add_field(name="⏰ Waktu (UTC)", value=event.time, inline=True)
-        if event.league:
-            embed.add_field(name="🏆 Liga", value=event.league, inline=False)
-        if event.venue:
-            embed.add_field(name="🏟️ Stadium", value=event.venue, inline=False)
-            
-        embed.set_footer(text="TheSportsDB API • Jadwal dapat berubah sewaktu-waktu")
-        
-        for sub in team_subs:
-            channel = self.bot.get_channel(sub.channel_id)
-            if channel:
-                try:
-                    # Mengirim notifikasi dengan mention everyone sesuai permintaan, KECUALI saat startup
-                    content = "📢 **Status Jadwal Terdekat**" if is_startup else "@everyone 📢 Reminder Pertandingan!"
-                    await channel.send(content=content, embed=embed)
-                    logger.info(f"Sent reminder for {event.id} to channel {channel.id}")
-                except discord.DiscordException as e:
-                    logger.error(f"Failed to send to {sub.channel_id}: {e}")
+        try:
+            # Ambil event terbaru dari liga (blocking I/O → dijalankan di thread)
+            events = await asyncio.to_thread(
+                self.api.get_latest_events_for_league, league_id
+            )
+
+            if not events:
+                logger.warning(f"[{label}] Tidak ada event ditemukan untuk {league_name}.")
+                await status_msg.edit(
+                    content=f"{emoji} **{league_name}** — Belum ada pertandingan terbaru yang bisa ditampilkan saat ini."
+                )
+                return
+
+            # Pilih 1 event secara acak dari maksimal 15 event terakhir
+            pool = events[-15:] if len(events) > 15 else events
+            event = random.choice(pool)
+
+            logger.info(
+                f"[{label}] Event terpilih: {event.name} "
+                f"(home={event.home_score}, away={event.away_score})"
+            )
+
+            # Minta AI merangkum menjadi berita
+            ai_summary = await self.ai.get_event_news_summary(
+                sport=sport,
+                league=league_name,
+                home_team=event.home_team or "Tim Tuan Rumah",
+                away_team=event.away_team or "Tim Tamu",
+                home_score=event.home_score,
+                away_score=event.away_score,
+                date=event.date,
+                venue=event.venue,
+            )
+
+            # Bangun embed
+            has_score = event.home_score is not None and event.away_score is not None
+            score_display = (
+                f"**{event.home_team}** `{event.home_score} - {event.away_score}` **{event.away_team}**"
+                if has_score
+                else f"{event.home_team} vs {event.away_team}"
+            )
+
+            embed = discord.Embed(
+                title=f"{emoji} Berita {sport} — {league_name}",
+                description=score_display,
+                color=self._league_color(sport),
+            )
+            embed.add_field(name="📰 Ringkasan AI", value=ai_summary, inline=False)
+            if event.date:
+                embed.add_field(name="📅 Tanggal", value=event.date, inline=True)
+            if event.venue:
+                embed.add_field(name="🏟️ Venue", value=event.venue, inline=True)
+
+            footer_tag = "🚀 Siaran Langsung Deploy" if is_startup else "🕙 Ringkasan Harian"
+            embed.set_footer(text=f"{footer_tag} • TheSportsDB + Gemini AI")
+
+            # Edit pesan status → ganti dengan embed final
+            await status_msg.edit(content=None, embed=embed)
+            logger.info(f"[{label}] Berhasil mengirim berita '{event.name}' ke channel {channel.id}.")
+
+        except Exception as e:
+            logger.error(f"[{label}] Gagal memproses berita: {e}", exc_info=True)
+            await status_msg.edit(
+                content=f"⚠️ Terjadi error saat mengambil berita olahraga: `{e}`"
+            )
+
+    # ------------------------------------------------------------------
+    # Helper
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _league_color(sport: str) -> int:
+        colors = {
+            "Soccer":     0x3D9970,   # hijau lapangan
+            "Basketball": 0xE67E22,   # oranye bola basket
+            "Tennis":     0xF1C40F,   # kuning bola tenis
+        }
+        return colors.get(sport, 0x1ABC9C)
