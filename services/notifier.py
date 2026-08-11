@@ -117,8 +117,11 @@ class NotifierService:
             if event.venue:
                 embed.add_field(name="🏟️ Venue", value=event.venue, inline=True)
 
+            if event.thumb_url:
+                embed.set_image(url=event.thumb_url)
+
             footer_tag = "🚀 Siaran Langsung Deploy" if is_startup else "🕙 Ringkasan Harian"
-            embed.set_footer(text=f"{footer_tag} • TheSportsDB + Gemini AI")
+            embed.set_footer(text=footer_tag)
 
             # Edit pesan status → ganti dengan embed final
             await status_msg.edit(content=None, embed=embed)

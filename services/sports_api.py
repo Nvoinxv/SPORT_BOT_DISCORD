@@ -64,6 +64,7 @@ class Team:
     name: str
     league: str | None = None
     sport: str | None = None
+    badge_url: str | None = None
 
     @classmethod
     def from_raw(cls, raw: dict[str, Any]) -> "Team":
@@ -72,6 +73,7 @@ class Team:
             name=raw["strTeam"],
             league=raw.get("strLeague"),
             sport=raw.get("strSport"),
+            badge_url=raw.get("strTeamBadge"),
         )
 
 
@@ -90,6 +92,7 @@ class Event:
     date: str | None  # format "YYYY-MM-DD" sesuai response API
     time: str | None  # format "HH:MM:SS" UTC sesuai response API
     venue: str | None
+    thumb_url: str | None
 
     @classmethod
     def from_raw(cls, raw: dict[str, Any]) -> "Event":
@@ -105,6 +108,7 @@ class Event:
             date=raw.get("dateEvent"),
             time=raw.get("strTime"),
             venue=raw.get("strVenue"),
+            thumb_url=raw.get("strThumb"),
         )
 
     @property

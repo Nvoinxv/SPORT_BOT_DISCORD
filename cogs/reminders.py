@@ -44,6 +44,8 @@ class RemindersCog(commands.Cog):
                 embed.add_field(name="Liga", value=team.league, inline=True)
             if team.sport:
                 embed.add_field(name="Olahraga", value=team.sport, inline=True)
+            if team.badge_url:
+                embed.set_thumbnail(url=team.badge_url)
             embed.add_field(name="🤖 Ringkasan AI", value=ai_summary, inline=False)
             
             await interaction.followup.send(embed=embed)
@@ -69,6 +71,8 @@ class RemindersCog(commands.Cog):
             embed.add_field(name="Waktu (UTC)", value=event.time, inline=True)
             if event.venue:
                 embed.add_field(name="Stadium", value=event.venue, inline=False)
+            if event.thumb_url:
+                embed.set_image(url=event.thumb_url)
             await interaction.followup.send(embed=embed)
         except TeamNotFoundError:
             await interaction.followup.send(f"Tim '{team_name}' tidak ditemukan.", ephemeral=True)
