@@ -83,16 +83,16 @@ class Event:
 
     id: str
     name: str
-    league: str | None
-    sport: str | None
-    home_team: str | None
-    away_team: str | None
-    home_score: str | None
-    away_score: str | None
-    date: str | None  # format "YYYY-MM-DD" sesuai response API
-    time: str | None  # format "HH:MM:SS" UTC sesuai response API
-    venue: str | None
-    thumb_url: str | None
+    league: str | None = None
+    sport: str | None = None
+    home_team: str | None = None
+    away_team: str | None = None
+    home_score: str | None = None
+    away_score: str | None = None
+    date: str | None = None  # format "YYYY-MM-DD" sesuai response API
+    time: str | None = None  # format "HH:MM:SS" UTC sesuai response API
+    venue: str | None = None
+    thumb_url: str | None = None
 
     @classmethod
     def from_raw(cls, raw: dict[str, Any]) -> "Event":
