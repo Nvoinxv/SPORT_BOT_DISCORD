@@ -22,6 +22,7 @@ class ReminderLoop:
         self.bot = bot
         self.content_service = ContentService()
         self.notifier = NotifierService(bot)
+        self.daily_news.start()
 
     @tasks.loop(time=SCHEDULE_TIMES)
     async def daily_news(self):

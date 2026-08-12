@@ -12,11 +12,19 @@ from services.newsdata_api import NewsDataClient, NewsDataAPIError, NewsDataAPIK
 from services.sports_api import TheSportsDBClient, AUTO_SOURCES, SportsAPIError
 from utils.logger import logger
 from db.models import ContentLog  # untuk membuat log object
-from db.repository import ContentLogRepository, DailyStatsRepository
+from db.repository import ContentLogRepository, DailyStatsRepository, ChannelConfigRepository
 
 Category = Literal["branded_shoes", "sport_shoes", "sport_random", "health_edu"]
 
 WITA_TZ = datetime.timezone(datetime.timedelta(hours=8))
+
+# Gambar fallback resolusi tinggi jika API berita / sports tidak menyediakan foto
+DEFAULT_IMAGES: dict[str, str] = {
+    "branded_shoes": "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800&q=80",
+    "sport_shoes": "https://images.unsplash.com/photo-1579338559194-a162d19bf842?w=800&q=80",
+    "sport_random": "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=800&q=80",
+    "health_edu": "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800&q=80",
+}
 
 # Liga yang erat kaitannya dengan sepatu (untuk kategori sport+shoes)
 SHOE_RELATED_LEAGUES = [
@@ -74,17 +82,31 @@ class ContentService:
 
         slot = self._hour_to_slot(hour)
 
+        item: ContentItem
         match slot:
             case 0:
-                return await self._generate_branded_shoes()
+                item = await self._generate_branded_shoes()
             case 1:
-                return await self._generate_sport_shoes()
+                item = await self._generate_sport_shoes()
             case 2:
-                return await self._generate_sport_random()
+                item = await self._generate_sport_random()
             case 3:
-                return await self._generate_health_edu()
+                item = await self._generate_health_edu()
             case _:
-                return await self._generate_sport_random()
+                item = await self._generate_sport_random()
+
+        # Pastikan gambar selalu ada (image_url tidak boleh None/kosong)
+        if not item.image_url:
+            fallback_img = DEFAULT_IMAGES.get(item.category, DEFAULT_IMAGES["sport_random"])
+            item = ContentItem(
+                category=item.category,
+                title=item.title,
+                body=item.body,
+                image_url=fallback_img,
+                source=item.source,
+                article_url=item.article_url,
+            )
+        return item
 
     def _hour_to_slot(self, hour: int) -> int:
         """Map jam ke slot 0-3. Hanya aktif 10-13 WITA, selain itu random."""
