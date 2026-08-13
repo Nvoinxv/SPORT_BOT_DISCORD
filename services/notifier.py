@@ -14,6 +14,9 @@ import random
 from datetime import datetime, timezone, timedelta
 
 import discord
+from db.models import ContentLog  # untuk membuat log object
+
+from db.repository import ContentLogRepository, DailyStatsRepository
 
 from bot.config import CHANNEL_ID
 from services.content_service import ContentItem  # FIX: import ContentItem
@@ -36,30 +39,35 @@ class NotifierService:
         self.bot = bot
         self.api = TheSportsDBClient()
         self.ai = GeminiService()
-        # FIX: simpan channel_id dari config agar bisa dipakai di send_content
         self.channel_id = CHANNEL_ID
+        
+        # Repository untuk tracking
+        self.log_repo = ContentLogRepository()
+        self.stats_repo = DailyStatsRepository()
 
     # ------------------------------------------------------------------
     # Entry point BARU — dipanggil oleh scheduler loop (loop.py)
     # ------------------------------------------------------------------
     async def send_content(self, content: ContentItem) -> None:
-        """
-        Kirim ContentItem ke channel Discord.
-        """
         channel = self.bot.get_channel(self.channel_id)
         if not channel:
-            logger.error(
-                "Channel Discord ID %s tidak ditemukan. "
-                "Pastikan CHANNEL_ID sudah benar di .env dan bot sudah di-invite ke server.",
-                self.channel_id,
-            )
+            logger.error("Channel Discord ID %s tidak ditemukan.", self.channel_id)
             return
+
+        # Cek duplikat: apakah judul serupa sudah dikirim hari ini?
+        try:
+            is_duplicate = await self.log_repo.exists_similar_today(content.title, content.category)
+            if is_duplicate:
+                logger.warning("Konten duplikat terdeteksi: %s. Skip pengiriman.", content.title)
+                return
+        except Exception as e:
+            logger.error("Gagal cek duplikat: %s", e)
 
         embed = discord.Embed(
             title=content.title,
             description=content.body,
             color=self._color_for_category(content.category),
-            timestamp=datetime.now(WITA_TZ),  # FIX: datetime.now (bukan datetime.datetime.now)
+            timestamp=datetime.now(WITA_TZ),
         )
         if content.image_url:
             embed.set_image(url=content.image_url)
@@ -71,10 +79,22 @@ class NotifierService:
         await channel.send(embed=embed)
         logger.info("Konten [%s] dari source [%s] berhasil dikirim ke Discord.", content.category, content.source)
 
+        # Simpan log ke MongoDB
         try:
-            await self.content_service._save_log(content, self.channel_id)
+            log = ContentLog(
+                category=content.category,
+                title=content.title,
+                body=content.body,
+                source=content.source,
+                article_url=content.article_url,
+                image_url=content.image_url,
+                channel_id=self.channel_id,
+            )
+            await self.log_repo.create(log)
+            await self.stats_repo.increment(content.category)
+            logger.debug("Log & stats berhasil disimpan untuk %s", content.category)
         except Exception as e:
-            logger.error("Gagal menyimpan log: %s", e)
+            logger.error("Gagal menyimpan log ke MongoDB: %s", e)
 
     # ------------------------------------------------------------------
     # Entry point LAMA — backward compatibility (bisa dipanggil manual)

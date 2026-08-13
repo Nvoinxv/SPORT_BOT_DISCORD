@@ -11,7 +11,8 @@ from services.news_api import GNewsClient, NewsAPIError, NewsAPIKeyMissingError
 from services.newsdata_api import NewsDataClient, NewsDataAPIError, NewsDataAPIKeyMissingError
 from services.sports_api import TheSportsDBClient, AUTO_SOURCES, SportsAPIError
 from utils.logger import logger
-from db.repository import ContentLogRepository, DailyStatsRepository, ChannelConfigRepository
+from db.models import ContentLog  # untuk membuat log object
+from db.repository import ContentLogRepository, DailyStatsRepository
 
 Category = Literal["branded_shoes", "sport_shoes", "sport_random", "health_edu"]
 
