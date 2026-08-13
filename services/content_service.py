@@ -8,6 +8,7 @@ from typing import Literal
 
 from services.gemini_service import GeminiService
 from services.news_api import GNewsClient, NewsAPIError, NewsAPIKeyMissingError
+from services.newsdata_api import NewsDataClient, NewsDataAPIError, NewsDataAPIKeyMissingError
 from services.sports_api import TheSportsDBClient, AUTO_SOURCES, SportsAPIError
 from utils.logger import logger
 
@@ -28,7 +29,7 @@ class ContentItem:
     body: str
     image_url: str | None = None
     source: str = "gemini"
-    article_url: str | None = None  # Tambahan: link ke berita asli (kalau dari GNews)
+    article_url: str | None = None
 
 
 class ContentService:
@@ -41,11 +42,13 @@ class ContentService:
         self,
         gemini: GeminiService | None = None,
         sports_client: TheSportsDBClient | None = None,
-        news_client: GNewsClient | None = None,
+        gnews_client: GNewsClient | None = None,
+        newsdata_client: NewsDataClient | None = None,
     ) -> None:
         self.gemini = gemini or GeminiService()
         self.sports = sports_client or TheSportsDBClient()
-        self.news = news_client or GNewsClient()
+        self.gnews = gnews_client or GNewsClient()
+        self.newsdata = newsdata_client or NewsDataClient()
 
     # -----------------------------------------------------------------
     # Dispatcher berdasarkan jam WITA
@@ -82,7 +85,7 @@ class ContentService:
         return mapping.get(hour, random.randint(0, 3))
 
     # -----------------------------------------------------------------
-    # 1. SEPATU BRANDED (Prioritas utama) — HYBRID: GNews + Gemini
+    # 1. SEPATU BRANDED (Prioritas utama) — GNEWS + Gemini
     # -----------------------------------------------------------------
     async def _generate_branded_shoes(self) -> ContentItem:
         """
@@ -97,13 +100,12 @@ class ContentService:
         # --- Step A: Coba ambil berita real dari GNews ---
         articles: list = []
         try:
-            articles = self.news.search_sneakers(brand=chosen_brand, max_results=3)
+            articles = self.gnews.search_sneakers(brand=chosen_brand, max_results=3)
         except (NewsAPIKeyMissingError, NewsAPIError) as e:
             logger.warning("GNews tidak tersedia untuk branded_shoes: %s", e)
 
         # --- Step B: Jika ada artikel, gabungkan & ringkas via Gemini ---
         if articles:
-            # Ambil 1-2 artikel, gabungkan jadi context
             context_parts = []
             for art in articles[:2]:
                 context_parts.append(f"Judul: {art.title}\nDeskripsi: {art.description}")
@@ -123,7 +125,6 @@ class ContentService:
 
             try:
                 body = await self.gemini.generate_raw(prompt)
-                # Ambil image dari artikel pertama kalau ada
                 image_url = articles[0].image
                 article_url = articles[0].url
                 return ContentItem(
@@ -136,7 +137,6 @@ class ContentService:
                 )
             except Exception as e:
                 logger.error("Gemini gagal ringkas GNews untuk branded_shoes: %s", e)
-                # Fallback: tampilkan berita mentah saja
                 art = articles[0]
                 body = f"📰 **{art.title}**\n{art.description}\n🔗 {art.url}"
                 return ContentItem(
@@ -148,7 +148,7 @@ class ContentService:
                     article_url=art.url,
                 )
 
-        # --- Step C: Fallback ke pure Gemini generate (kalau GNews kosong/gagal) ---
+        # --- Step C: Fallback ke pure Gemini generate ---
         return await self._generate_branded_shoes_pure_gemini(chosen_brand)
 
     async def _generate_branded_shoes_pure_gemini(self, brand: str) -> ContentItem:
@@ -289,14 +289,14 @@ class ContentService:
             )
 
     # -----------------------------------------------------------------
-    # 4. EDUKASI KESEHATAN — HYBRID: GNews + Gemini
+    # 4. EDUKASI KESEHATAN — NEWSDATA.IO + Gemini
     # -----------------------------------------------------------------
     async def _generate_health_edu(self) -> ContentItem:
         """
         Strategi Hybrid:
-        1. Cari berita kesehatan REAL via GNews
-        2. Ringkas & terjemahkan via Gemini
-        3. Fallback ke pure Gemini kalau GNews gagal
+        1. Cari berita kesehatan REAL via NewsData.io
+        2. Ringkas & terjemahkan via Gemini ke bahasa Indonesia gaya Discord
+        3. Fallback ke pure Gemini kalau NewsData.io gagal
         """
         topics = [
             "warm up before exercise injury prevention",
@@ -304,21 +304,23 @@ class ContentService:
             "sleep recovery for athletes",
             "foot care after running marathon",
             "hydration exercise dehydration",
+            "mental health exercise stress relief",
         ]
         chosen_topic = random.choice(topics)
 
-        # --- Step A: Coba ambil berita real ---
+        # --- Step A: Coba ambil berita real dari NewsData.io ---
         articles: list = []
         try:
-            articles = self.news.search_health(topic=chosen_topic, max_results=3)
-        except (NewsAPIKeyMissingError, NewsAPIError) as e:
-            logger.warning("GNews tidak tersedia untuk health_edu: %s", e)
+            articles = self.newsdata.search_health(topic=chosen_topic, max_results=5)
+        except (NewsDataAPIKeyMissingError, NewsDataAPIError) as e:
+            logger.warning("NewsData.io tidak tersedia untuk health_edu: %s", e)
 
         # --- Step B: Jika ada artikel, ringkas via Gemini ---
         if articles:
             context_parts = []
             for art in articles[:2]:
-                context_parts.append(f"Judul: {art.title}\nDeskripsi: {art.description}")
+                desc = art.description or "Tidak ada deskripsi."
+                context_parts.append(f"Judul: {art.title}\nDeskripsi: {desc}")
             context = "\n\n".join(context_parts)
 
             prompt = (
@@ -329,31 +331,32 @@ class ContentService:
                 f"1. Buat tips singkat (4-5 kalimat) berdasarkan artikel di atas.\n"
                 f"2. Gunakan bahasa Indonesia santai, jangan kaku, tambahkan emoji relevan.\n"
                 f"3. Fokus pada edukasi praktis yang bisa langsung diterapkan.\n"
-                f"4. Jangan copy-paste mentah, ubah jadi gaya ngobrol di Discord."
+                f"4. Jangan copy-paste mentah, ubah jadi gaya ngobrol di Discord.\n"
+                f"5. Di akhir, tambahkan 1 pertanyaan ajak diskusi ringan."
             )
 
             try:
                 body = await self.gemini.generate_raw(prompt)
-                image_url = articles[0].image
+                image_url = articles[0].image_url
                 article_url = articles[0].url
                 return ContentItem(
                     category="health_edu",
                     title="💡 Health Tips",
                     body=body,
                     image_url=image_url,
-                    source="gnews+gemini",
+                    source="newsdata+gemini",
                     article_url=article_url,
                 )
             except Exception as e:
-                logger.error("Gemini gagal ringkas GNews untuk health_edu: %s", e)
+                logger.error("Gemini gagal ringkas NewsData.io untuk health_edu: %s", e)
                 art = articles[0]
-                body = f"📰 **{art.title}**\n{art.description}\n🔗 {art.url}"
+                body = f"📰 **{art.title}**\n{art.description or 'Tidak ada deskripsi.'}\n🔗 {art.url}"
                 return ContentItem(
                     category="health_edu",
                     title="💡 Health Tips",
                     body=body,
-                    image_url=art.image,
-                    source="gnews_raw",
+                    image_url=art.image_url,
+                    source="newsdata_raw",
                     article_url=art.url,
                 )
 
@@ -376,6 +379,8 @@ class ContentService:
             "Mengapa istirahat cukup penting untuk atlet",
             "Cara merawat kaki setelah lari marathon",
             "Bedanya dehydration dan overhydration saat olahraga",
+            "Manfaat olahraga untuk kesehatan mental",
+            "Cara mengatasi muscle soreness setelah gym",
         ]
         topic = random.choice(topics_id)
 
