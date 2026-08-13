@@ -83,3 +83,46 @@ class GeminiService:
         except Exception as e:
             logger.error(f"Gemini API error (event news): {e}")
             return "*(Gagal mendapatkan ringkasan AI untuk pertandingan ini)*"
+
+    async def generate_raw(self, prompt: str) -> str:
+        """Generate teks bebas dari prompt apa pun."""
+        if not self.is_ready:
+            return "*(Fitur AI sedang dinonaktifkan)*"
+        try:
+            response = await asyncio.to_thread(self.model.generate_content, prompt)
+            return response.text.strip()
+        except Exception as e:
+            logger.error(f"Gemini raw error: {e}")
+            return "*(Gagal generate konten AI)*"
+
+    async def generate_sport_shoes_angle(
+        self,
+        sport: str,
+        league: str,
+        home_team: str,
+        away_team: str,
+        home_score: str | None,
+        away_score: str | None,
+    ) -> str:
+        """
+        Generate ringkasan pertandingan dengan angle "sepatu/sneakers".
+        """
+        if not self.is_ready:
+            return "*(Ringkasan AI tidak tersedia)*"
+
+        score_info = f"Skor: {home_team} {home_score or '-'} - {away_score or '-'} {away_team}" if home_score and away_score else "Skor belum tersedia."
+
+        prompt = (
+            f"Kamu adalah reporter olahraga yang juga sneakerhead. "
+            f"Buat ringkasan singkat (3-4 kalimat) pertandingan {sport} di {league}: "
+            f"{home_team} vs {away_team}. {score_info}\n\n"
+            f"Selain hasil pertandingan, tambahkan 1 kalimat ringan tentang "
+            f"sepatu yang biasa dipakai pemain di liga ini atau brand yang mensponsori. "
+            f"Bahasa Indonesia casual, asik, cocok untuk Discord. Jangan panjang-panjang."
+        )
+        try:
+            response = await asyncio.to_thread(self.model.generate_content, prompt)
+            return response.text.strip()
+        except Exception as e:
+            logger.error(f"Gemini sport+shoes error: {e}")
+            return "*(Gagal mendapatkan ringkasan)*"
