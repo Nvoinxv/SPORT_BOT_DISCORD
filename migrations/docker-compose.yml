@@ -38,7 +38,7 @@ services:
     container_name: sport_bot_mongo
     restart: always
     ports:
-      - "27018:27017"
+      - "27020:27017"
 
     networks:
       - shared_mongo_net
