@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from services.gemini_service import GeminiService
+from services.news_api import GNewsClient, NewsAPIError, NewsAPIKeyMissingError
 from services.sports_api import TheSportsDBClient, AUTO_SOURCES, SportsAPIError
 from utils.logger import logger
 
@@ -16,10 +17,8 @@ WITA_TZ = datetime.timezone(datetime.timedelta(hours=8))
 
 # Liga yang erat kaitannya dengan sepatu (untuk kategori sport+shoes)
 SHOE_RELATED_LEAGUES = [
-    {"name": "NBA", "sport": "Basketball", "league_id": "4387"},          # sepatu basket
-    {"name": "ATP Tour", "sport": "Tennis", "league_id": "4424"},         # sepatu tenis
-    # Tambahkan kalau TheSportsDB support:
-    # {"name": "Bundesliga", "sport": "Soccer", "league_id": "4331"},     # sepatu bola
+    {"name": "NBA", "sport": "Basketball", "league_id": "4387"},
+    {"name": "ATP Tour", "sport": "Tennis", "league_id": "4424"},
 ]
 
 @dataclass(frozen=True, slots=True)
@@ -28,7 +27,8 @@ class ContentItem:
     title: str
     body: str
     image_url: str | None = None
-    source: str = "gemini"  # atau "thesportsdb"
+    source: str = "gemini"
+    article_url: str | None = None  # Tambahan: link ke berita asli (kalau dari GNews)
 
 
 class ContentService:
@@ -41,9 +41,11 @@ class ContentService:
         self,
         gemini: GeminiService | None = None,
         sports_client: TheSportsDBClient | None = None,
+        news_client: GNewsClient | None = None,
     ) -> None:
         self.gemini = gemini or GeminiService()
         self.sports = sports_client or TheSportsDBClient()
+        self.news = news_client or GNewsClient()
 
     # -----------------------------------------------------------------
     # Dispatcher berdasarkan jam WITA
@@ -60,7 +62,6 @@ class ContentService:
         if hour is None:
             hour = datetime.datetime.now(WITA_TZ).hour
 
-        # Normalisasi: kalau di luar range, fallback ke slot
         slot = self._hour_to_slot(hour)
 
         match slot:
@@ -73,7 +74,6 @@ class ContentService:
             case 3:
                 return await self._generate_health_edu()
             case _:
-                # Fallback: sport random
                 return await self._generate_sport_random()
 
     def _hour_to_slot(self, hour: int) -> int:
@@ -82,10 +82,77 @@ class ContentService:
         return mapping.get(hour, random.randint(0, 3))
 
     # -----------------------------------------------------------------
-    # 1. SEPATU BRANDED (Prioritas utama)
+    # 1. SEPATU BRANDED (Prioritas utama) — HYBRID: GNews + Gemini
     # -----------------------------------------------------------------
     async def _generate_branded_shoes(self) -> ContentItem:
-        """Generate konten sepatu branded China (Li-Ning, Anta) via Gemini."""
+        """
+        Strategi Hybrid:
+        1. Cari berita REAL via GNews (Li-Ning / Anta / sneakers)
+        2. Feed ke Gemini untuk diringkas & diterjemahkan ke bahasa Indonesia gaya Discord
+        3. Kalau GNews gagal/tidak ada API key → fallback ke pure Gemini generate
+        """
+        brands = ["Li-Ning", "Anta", "Li-Ning dan Anta"]
+        chosen_brand = random.choice(brands)
+
+        # --- Step A: Coba ambil berita real dari GNews ---
+        articles: list = []
+        try:
+            articles = self.news.search_sneakers(brand=chosen_brand, max_results=3)
+        except (NewsAPIKeyMissingError, NewsAPIError) as e:
+            logger.warning("GNews tidak tersedia untuk branded_shoes: %s", e)
+
+        # --- Step B: Jika ada artikel, gabungkan & ringkas via Gemini ---
+        if articles:
+            # Ambil 1-2 artikel, gabungkan jadi context
+            context_parts = []
+            for art in articles[:2]:
+                context_parts.append(f"Judul: {art.title}\nDeskripsi: {art.description}")
+            context = "\n\n".join(context_parts)
+
+            prompt = (
+                f"Kamu adalah influencer sneakers yang update dengan tren global. "
+                f"Berikut adalah berita REAL dari internet tentang **{chosen_brand}**:\n\n"
+                f"{context}\n\n"
+                f"Tugas kamu:\n"
+                f"1. Buat 1 postingan menarik (maksimal 5 kalimat) berdasarkan berita di atas.\n"
+                f"2. Gunakan bahasa Indonesia yang asik, gaul tapi tetap informatif.\n"
+                f"3. Tambahkan emoji yang pas. Jangan terlalu panjang, cocok untuk Discord.\n"
+                f"4. Jangan copy-paste mentah, tapi ringkas dan ubah jadi gaya ngobrol.\n"
+                f"5. Di akhir, tambahkan 1 kalimat ajakan diskusi ringan."
+            )
+
+            try:
+                body = await self.gemini.generate_raw(prompt)
+                # Ambil image dari artikel pertama kalau ada
+                image_url = articles[0].image
+                article_url = articles[0].url
+                return ContentItem(
+                    category="branded_shoes",
+                    title=f"🔥 Sneakers Corner: {chosen_brand}",
+                    body=body,
+                    image_url=image_url,
+                    source="gnews+gemini",
+                    article_url=article_url,
+                )
+            except Exception as e:
+                logger.error("Gemini gagal ringkas GNews untuk branded_shoes: %s", e)
+                # Fallback: tampilkan berita mentah saja
+                art = articles[0]
+                body = f"📰 **{art.title}**\n{art.description}\n🔗 {art.url}"
+                return ContentItem(
+                    category="branded_shoes",
+                    title=f"🔥 Sneakers Corner: {chosen_brand}",
+                    body=body,
+                    image_url=art.image,
+                    source="gnews_raw",
+                    article_url=art.url,
+                )
+
+        # --- Step C: Fallback ke pure Gemini generate (kalau GNews kosong/gagal) ---
+        return await self._generate_branded_shoes_pure_gemini(chosen_brand)
+
+    async def _generate_branded_shoes_pure_gemini(self, brand: str) -> ContentItem:
+        """Generate sepatu branded tanpa data real (pure AI)."""
         if not self.gemini.is_ready:
             return ContentItem(
                 category="branded_shoes",
@@ -93,13 +160,10 @@ class ContentService:
                 body="*(Fitur AI sedang dinonaktifkan)*",
             )
 
-        brands = ["Li-Ning", "Anta", "Li-Ning dan Anta"]
-        chosen = random.choice(brands)
-
         prompt = (
             f"Kamu adalah influencer sneakers yang update dengan tren global. "
             f"Buat 1 postingan menarik (maksimal 5 kalimat) tentang sepatu sport branded China, "
-            f"khususnya **{chosen}**. Bisa tentang: sejarah brand, teknologi terbaru, "
+            f"khususnya **{brand}**. Bisa tentang: sejarah brand, teknologi terbaru, "
             f"kolaborasi dengan atlet (contoh: Klay Thompson x Anta, Jimmy Butler x Li-Ning), "
             f"atau kenapa brand ini naik daun. Gunakan bahasa Indonesia yang asik, gaul tapi tetap informatif. "
             f"Tambahkan emoji yang pas. Jangan terlalu panjang, cocok untuk Discord."
@@ -109,12 +173,12 @@ class ContentService:
             body = await self.gemini.generate_raw(prompt)
             return ContentItem(
                 category="branded_shoes",
-                title=f"🔥 Sneakers Corner: {chosen}",
+                title=f"🔥 Sneakers Corner: {brand}",
                 body=body,
                 source="gemini",
             )
         except Exception as e:
-            logger.error(f"Gagal generate branded shoes: {e}")
+            logger.error("Gagal generate branded shoes: %s", e)
             return ContentItem(
                 category="branded_shoes",
                 title="👟 Sneakers Corner",
@@ -139,7 +203,6 @@ class ContentService:
                 return await self._fallback_sport_shoes_gemini()
 
             event = random.choice(events)
-            # Generate via Gemini dengan angle "sepatu"
             body = await self.gemini.generate_sport_shoes_angle(
                 sport=league["sport"],
                 league=league["name"],
@@ -156,7 +219,7 @@ class ContentService:
                 source="thesportsdb+gemini",
             )
         except SportsAPIError as e:
-            logger.warning(f"TheSportsDB gagal untuk sport_shoes: {e}")
+            logger.warning("TheSportsDB gagal untuk sport_shoes: %s", e)
             return await self._fallback_sport_shoes_gemini()
 
     async def _fallback_sport_shoes_gemini(self) -> ContentItem:
@@ -204,7 +267,6 @@ class ContentService:
                 )
 
             event = random.choice(events)
-            # Bisa pakai Gemini untuk ringkas, atau format manual
             body = (
                 f"🏆 **{event.name}**\n"
                 f"⚔️ {event.home_team} vs {event.away_team}\n"
@@ -219,7 +281,7 @@ class ContentService:
                 source="thesportsdb",
             )
         except SportsAPIError as e:
-            logger.error(f"Sport random error: {e}")
+            logger.error("Sport random error: %s", e)
             return ContentItem(
                 category="sport_random",
                 title="🏆 Sport Update",
@@ -227,10 +289,79 @@ class ContentService:
             )
 
     # -----------------------------------------------------------------
-    # 4. EDUKASI KESEHATAN
+    # 4. EDUKASI KESEHATAN — HYBRID: GNews + Gemini
     # -----------------------------------------------------------------
     async def _generate_health_edu(self) -> ContentItem:
-        """Generate tips kesehatan olahraga via Gemini."""
+        """
+        Strategi Hybrid:
+        1. Cari berita kesehatan REAL via GNews
+        2. Ringkas & terjemahkan via Gemini
+        3. Fallback ke pure Gemini kalau GNews gagal
+        """
+        topics = [
+            "warm up before exercise injury prevention",
+            "post workout nutrition recovery",
+            "sleep recovery for athletes",
+            "foot care after running marathon",
+            "hydration exercise dehydration",
+        ]
+        chosen_topic = random.choice(topics)
+
+        # --- Step A: Coba ambil berita real ---
+        articles: list = []
+        try:
+            articles = self.news.search_health(topic=chosen_topic, max_results=3)
+        except (NewsAPIKeyMissingError, NewsAPIError) as e:
+            logger.warning("GNews tidak tersedia untuk health_edu: %s", e)
+
+        # --- Step B: Jika ada artikel, ringkas via Gemini ---
+        if articles:
+            context_parts = []
+            for art in articles[:2]:
+                context_parts.append(f"Judul: {art.title}\nDeskripsi: {art.description}")
+            context = "\n\n".join(context_parts)
+
+            prompt = (
+                f"Kamu adalah trainer olahraga yang friendly. "
+                f"Berikut adalah artikel kesehatan dari internet:\n\n"
+                f"{context}\n\n"
+                f"Tugas kamu:\n"
+                f"1. Buat tips singkat (4-5 kalimat) berdasarkan artikel di atas.\n"
+                f"2. Gunakan bahasa Indonesia santai, jangan kaku, tambahkan emoji relevan.\n"
+                f"3. Fokus pada edukasi praktis yang bisa langsung diterapkan.\n"
+                f"4. Jangan copy-paste mentah, ubah jadi gaya ngobrol di Discord."
+            )
+
+            try:
+                body = await self.gemini.generate_raw(prompt)
+                image_url = articles[0].image
+                article_url = articles[0].url
+                return ContentItem(
+                    category="health_edu",
+                    title="💡 Health Tips",
+                    body=body,
+                    image_url=image_url,
+                    source="gnews+gemini",
+                    article_url=article_url,
+                )
+            except Exception as e:
+                logger.error("Gemini gagal ringkas GNews untuk health_edu: %s", e)
+                art = articles[0]
+                body = f"📰 **{art.title}**\n{art.description}\n🔗 {art.url}"
+                return ContentItem(
+                    category="health_edu",
+                    title="💡 Health Tips",
+                    body=body,
+                    image_url=art.image,
+                    source="gnews_raw",
+                    article_url=art.url,
+                )
+
+        # --- Step C: Fallback pure Gemini ---
+        return await self._generate_health_edu_pure_gemini()
+
+    async def _generate_health_edu_pure_gemini(self) -> ContentItem:
+        """Generate tips kesehatan tanpa data real."""
         if not self.gemini.is_ready:
             return ContentItem(
                 category="health_edu",
@@ -238,7 +369,7 @@ class ContentService:
                 body="*(Fitur AI sedang dinonaktifkan)*",
             )
 
-        topics = [
+        topics_id = [
             "Tips pemanasan sebelum olahraga agar tidak cedera",
             "Nutrisi terbaik setelah workout",
             "Cara recovery cepat setelah basket/sepakbola",
@@ -246,7 +377,7 @@ class ContentService:
             "Cara merawat kaki setelah lari marathon",
             "Bedanya dehydration dan overhydration saat olahraga",
         ]
-        topic = random.choice(topics)
+        topic = random.choice(topics_id)
 
         prompt = (
             f"Kamu adalah trainer olahraga yang friendly. "
@@ -264,7 +395,7 @@ class ContentService:
                 source="gemini",
             )
         except Exception as e:
-            logger.error(f"Health edu error: {e}")
+            logger.error("Health edu error: %s", e)
             return ContentItem(
                 category="health_edu",
                 title="💡 Health Tips",
