@@ -71,6 +71,11 @@ class NotifierService:
         await channel.send(embed=embed)
         logger.info("Konten [%s] dari source [%s] berhasil dikirim ke Discord.", content.category, content.source)
 
+        try:
+            await self.content_service._save_log(content, self.channel_id)
+        except Exception as e:
+            logger.error("Gagal menyimpan log: %s", e)
+
     # ------------------------------------------------------------------
     # Entry point LAMA — backward compatibility (bisa dipanggil manual)
     # ------------------------------------------------------------------
