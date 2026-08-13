@@ -11,6 +11,7 @@ from services.news_api import GNewsClient, NewsAPIError, NewsAPIKeyMissingError
 from services.newsdata_api import NewsDataClient, NewsDataAPIError, NewsDataAPIKeyMissingError
 from services.sports_api import TheSportsDBClient, AUTO_SOURCES, SportsAPIError
 from utils.logger import logger
+from db.repository import ContentLogRepository, DailyStatsRepository, ChannelConfigRepository
 
 Category = Literal["branded_shoes", "sport_shoes", "sport_random", "health_edu"]
 
@@ -49,6 +50,11 @@ class ContentService:
         self.sports = sports_client or TheSportsDBClient()
         self.gnews = gnews_client or GNewsClient()
         self.newsdata = newsdata_client or NewsDataClient()
+        
+        # Repository baru untuk tracking
+        self.log_repo = ContentLogRepository()
+        self.stats_repo = DailyStatsRepository()
+        self.channel_repo = ChannelConfigRepository()
 
     # -----------------------------------------------------------------
     # Dispatcher berdasarkan jam WITA
@@ -185,6 +191,23 @@ class ContentService:
                 body="*(Gagal memuat info sepatu branded hari ini)*",
             )
 
+    async def _save_log(self, content: ContentItem, channel_id: int) -> None:
+        """Simpan log konten ke MongoDB."""
+        try:
+            log = ContentLog(
+                category=content.category,
+                title=content.title,
+                body=content.body,
+                source=content.source,
+                article_url=content.article_url,
+                image_url=content.image_url,
+                channel_id=channel_id,
+            )
+            await self.log_repo.create(log)
+            await self.stats_repo.increment(content.category)
+        except Exception as e:
+            logger.error("Gagal menyimpan log konten: %s", e)
+
     # -----------------------------------------------------------------
     # 2. SPORT YANG BERHUBUNGAN DENGAN SEPATU
     # -----------------------------------------------------------------
@@ -244,6 +267,23 @@ class ContentService:
             source="gemini",
         )
 
+    async def _save_log(self, content: ContentItem, channel_id: int) -> None:
+        """Simpan log konten ke MongoDB."""
+        try:
+            log = ContentLog(
+                category=content.category,
+                title=content.title,
+                body=content.body,
+                source=content.source,
+                article_url=content.article_url,
+                image_url=content.image_url,
+                channel_id=channel_id,
+            )
+            await self.log_repo.create(log)
+            await self.stats_repo.increment(content.category)
+        except Exception as e:
+            logger.error("Gagal menyimpan log konten: %s", e)
+
     # -----------------------------------------------------------------
     # 3. SPORT RANDOM
     # -----------------------------------------------------------------
@@ -287,6 +327,23 @@ class ContentService:
                 title="🏆 Sport Update",
                 body="*(Gagal mengambil data pertandingan)*",
             )
+
+    async def _save_log(self, content: ContentItem, channel_id: int) -> None:
+        """Simpan log konten ke MongoDB."""
+        try:
+            log = ContentLog(
+                category=content.category,
+                title=content.title,
+                body=content.body,
+                source=content.source,
+                article_url=content.article_url,
+                image_url=content.image_url,
+                channel_id=channel_id,
+            )
+            await self.log_repo.create(log)
+            await self.stats_repo.increment(content.category)
+        except Exception as e:
+            logger.error("Gagal menyimpan log konten: %s", e)
 
     # -----------------------------------------------------------------
     # 4. EDUKASI KESEHATAN — NEWSDATA.IO + Gemini
@@ -406,3 +463,20 @@ class ContentService:
                 title="💡 Health Tips",
                 body="*(Gagal memuat tips kesehatan hari ini)*",
             )
+
+    async def _save_log(self, content: ContentItem, channel_id: int) -> None:
+        """Simpan log konten ke MongoDB."""
+        try:
+            log = ContentLog(
+                category=content.category,
+                title=content.title,
+                body=content.body,
+                source=content.source,
+                article_url=content.article_url,
+                image_url=content.image_url,
+                channel_id=channel_id,
+            )
+            await self.log_repo.create(log)
+            await self.stats_repo.increment(content.category)
+        except Exception as e:
+            logger.error("Gagal menyimpan log konten: %s", e)
