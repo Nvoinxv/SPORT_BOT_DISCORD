@@ -16,10 +16,13 @@ from datetime import datetime, timezone, timedelta
 import discord
 
 from bot.config import CHANNEL_ID
+from services.content_service import ContentItem  # FIX: import ContentItem
 from services.sports_api import TheSportsDBClient, AUTO_SOURCES
 from services.gemini_service import GeminiService
 from utils.logger import logger
 
+# FIX: definisikan WITA_TZ (Waktu Indonesia Tengah = UTC+8)
+WITA_TZ = timezone(timedelta(hours=8))
 
 SPORT_EMOJIS = {
     "Soccer":     "⚽",
@@ -33,18 +36,52 @@ class NotifierService:
         self.bot = bot
         self.api = TheSportsDBClient()
         self.ai = GeminiService()
+        # FIX: simpan channel_id dari config agar bisa dipakai di send_content
+        self.channel_id = CHANNEL_ID
 
     # ------------------------------------------------------------------
-    # Entry point utama — dipanggil oleh scheduler maupun saat startup.
+    # Entry point BARU — dipanggil oleh scheduler loop (loop.py)
+    # ------------------------------------------------------------------
+    async def send_content(self, content: ContentItem) -> None:
+        """
+        Kirim ContentItem ke channel Discord.
+        """
+        channel = self.bot.get_channel(self.channel_id)
+        if not channel:
+            logger.error(
+                "Channel Discord ID %s tidak ditemukan. "
+                "Pastikan CHANNEL_ID sudah benar di .env dan bot sudah di-invite ke server.",
+                self.channel_id,
+            )
+            return
+
+        embed = discord.Embed(
+            title=content.title,
+            description=content.body,
+            color=self._color_for_category(content.category),
+            timestamp=datetime.now(WITA_TZ),  # FIX: datetime.now (bukan datetime.datetime.now)
+        )
+        if content.image_url:
+            embed.set_image(url=content.image_url)
+        if content.article_url:
+            embed.add_field(name="🔗 Sumber", value=content.article_url, inline=False)
+
+        embed.set_footer(text=f"Kategori: {content.category} | Source: {content.source}")
+
+        await channel.send(embed=embed)
+        logger.info("Konten [%s] dari source [%s] berhasil dikirim ke Discord.", content.category, content.source)
+
+    # ------------------------------------------------------------------
+    # Entry point LAMA — backward compatibility (bisa dipanggil manual)
     # ------------------------------------------------------------------
     async def check_and_notify(self, is_startup: bool = False):
         label = "STARTUP" if is_startup else "SCHEDULER"
         logger.info(f"[{label}] check_and_notify dipanggil.")
 
-        channel = self.bot.get_channel(CHANNEL_ID)
+        channel = self.bot.get_channel(self.channel_id)
         if not channel:
             logger.error(
-                f"Channel ID {CHANNEL_ID} tidak ditemukan. "
+                f"Channel ID {self.channel_id} tidak ditemukan. "
                 "Pastikan DISCORD_ID_CHANNEL_SEPUTAR_SEPATU sudah benar di .env "
                 "dan bot sudah di-invite ke server dengan izin yang cukup."
             )
@@ -134,7 +171,20 @@ class NotifierService:
             )
 
     # ------------------------------------------------------------------
-    # Helper
+    # Helper — warna embed per kategori (untuk send_content baru)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _color_for_category(category: str) -> int:
+        colors = {
+            "branded_shoes": 0xFF6B00,   # Orange
+            "sport_shoes": 0x00BFFF,      # Deep Sky Blue
+            "sport_random": 0x32CD32,     # Lime Green
+            "health_edu": 0xFF69B4,       # Hot Pink
+        }
+        return colors.get(category, 0x7289DA)  # Default Discord blurple
+
+    # ------------------------------------------------------------------
+    # Helper — warna embed per sport (untuk check_and_notify lama)
     # ------------------------------------------------------------------
     @staticmethod
     def _league_color(sport: str) -> int:
