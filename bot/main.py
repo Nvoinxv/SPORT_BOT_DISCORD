@@ -3,6 +3,7 @@ import logging
 import discord
 from discord.ext import commands
 import aiohttp
+from bot.config import DISCORD_TOKEN
 
 # 1. Konfigurasi Logging yang proper
 logging.basicConfig(
@@ -30,8 +31,8 @@ class ProductionBot(commands.Bot):
         logger.info("Global aiohttp session created.")
         
         # Load cogs kamu di sini
-        # await self.load_extension("cogs.music")
-        # await self.load_extension("cogs.admin")
+        await self.load_extension("cogs.admin")
+        await self.load_extension("cogs.reminders")
 
     async def close(self):
         """Dipanggil saat bot dimatikan. Mencegah error 'Unclosed connection'."""
@@ -52,7 +53,7 @@ async def main():
     loop.slow_callback_duration = 0.5 
 
     bot = ProductionBot()
-    token = "TOKEN_DISCORD_KAMU" # Ganti pakai os.getenv() / dotenv
+    token = DISCORD_TOKEN
     
     # 3. Graceful runner
     async with bot:
