@@ -15,7 +15,6 @@ from datetime import datetime, timezone, timedelta
 
 import discord
 from db.models import ContentLog  # untuk membuat log object
-
 from db.repository import ContentLogRepository, DailyStatsRepository
 
 from bot.config import CHANNEL_ID
