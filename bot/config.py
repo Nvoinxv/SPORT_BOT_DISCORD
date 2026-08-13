@@ -23,3 +23,6 @@ if CHANNEL_ID:
 GUILD_ID = os.getenv("DISCORD_GROUP_ID")
 if GUILD_ID:
     GUILD_ID = int(GUILD_ID)
+
+GNEWS_API_KEY = os.getenv("GNEWS_API_KEY", "")
+NEWS_DATA_IO_API = os.getenv("News_Data_Io_API")
