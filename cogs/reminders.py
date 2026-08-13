@@ -25,6 +25,11 @@ class RemindersCog(commands.Cog):
         self.api = TheSportsDBClient()
         self.ai = GeminiService()
 
+    async def cog_unload(self):
+        """Dipanggil saat cog di-unload atau bot dimatikan untuk mencegah Unclosed Connection."""
+        if hasattr(self.api, 'close'):
+            self.api.close()
+
     @app_commands.command(name="team_search", description="Mencari informasi dan ringkasan AI tentang tim olahraga.")
     @app_commands.describe(team_name="Nama tim yang dicari")
     async def team_search(self, interaction: discord.Interaction, team_name: str):

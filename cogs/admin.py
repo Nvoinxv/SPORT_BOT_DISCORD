@@ -18,6 +18,12 @@ class AdminCog(commands.Cog):
         # Start the scheduler loop when admin cog loads
         self.scheduler = ReminderLoop(self.bot)
 
+    async def cog_unload(self):
+        """Dipanggil saat cog di-unload atau bot dimatikan untuk mencegah Unclosed Connection."""
+        self.scheduler.daily_news.cancel()
+        if hasattr(self.scheduler.content_service, 'close'):
+            self.scheduler.content_service.close()
+
     @app_commands.command(name="ping", description="Mengecek status dan latensi bot.")
     async def ping(self, interaction: discord.Interaction):
         latency = round(self.bot.latency * 1000)
@@ -38,7 +44,10 @@ class AdminCog(commands.Cog):
             "⏳ Memproses... Bot sedang mengambil berita olahraga, tunggu sebentar ya!",
             ephemeral=True
         )
-        await self.scheduler.notifier.check_and_notify(is_startup=False)
+        import datetime
+        now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
+        content = await self.scheduler.content_service.get_content_for_hour(now.hour)
+        await self.scheduler.notifier.send_content(content)
         await interaction.edit_original_response(
             content="✅ Berita olahraga sudah dikirim ke channel!"
         )

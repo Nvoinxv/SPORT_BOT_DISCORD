@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime
 import random
+import asyncio
 from dataclasses import dataclass
 from typing import Literal
 
@@ -64,6 +65,15 @@ class ContentService:
         self.log_repo = ContentLogRepository()
         self.stats_repo = DailyStatsRepository()
         self.channel_repo = ChannelConfigRepository()
+
+    def close(self):
+        """Menutup koneksi HTTP yang digunakan oleh clients."""
+        if hasattr(self.sports, 'close'):
+            self.sports.close()
+        if hasattr(self.gnews, 'close'):
+            self.gnews.close()
+        if hasattr(self.newsdata, 'close'):
+            self.newsdata.close()
 
     # -----------------------------------------------------------------
     # Dispatcher berdasarkan jam WITA
@@ -129,7 +139,7 @@ class ContentService:
         # --- Step A: Coba ambil berita real dari GNews ---
         articles: list = []
         try:
-            articles = self.gnews.search_sneakers(brand=chosen_brand, max_results=3)
+            articles = await asyncio.to_thread(self.gnews.search_sneakers, brand=chosen_brand, max_results=3)
         except (NewsAPIKeyMissingError, NewsAPIError) as e:
             logger.warning("GNews tidak tersedia untuk branded_shoes: %s", e)
 
@@ -244,7 +254,7 @@ class ContentService:
 
         league = random.choice(SHOE_RELATED_LEAGUES)
         try:
-            events = self.sports.get_latest_events_for_league(league["league_id"])
+            events = await asyncio.to_thread(self.sports.get_latest_events_for_league, league["league_id"])
             if not events:
                 return await self._fallback_sport_shoes_gemini()
 
@@ -321,7 +331,7 @@ class ContentService:
 
         source = random.choice(AUTO_SOURCES)
         try:
-            events = self.sports.get_latest_events_for_league(source["league_id"])
+            events = await asyncio.to_thread(self.sports.get_latest_events_for_league, source["league_id"])
             if not events:
                 return ContentItem(
                     category="sport_random",
@@ -391,7 +401,7 @@ class ContentService:
         # --- Step A: Coba ambil berita real dari NewsData.io ---
         articles: list = []
         try:
-            articles = self.newsdata.search_health(topic=chosen_topic, max_results=5)
+            articles = await asyncio.to_thread(self.newsdata.search_health, topic=chosen_topic, max_results=5)
         except (NewsDataAPIKeyMissingError, NewsDataAPIError) as e:
             logger.warning("NewsData.io tidak tersedia untuk health_edu: %s", e)
 
