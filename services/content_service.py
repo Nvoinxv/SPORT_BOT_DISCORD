@@ -129,11 +129,12 @@ class ContentService:
     async def _generate_branded_shoes(self) -> ContentItem:
         """
         Strategi Hybrid:
-        1. Cari berita REAL via GNews (Li-Ning / Anta / sneakers)
+        1. Cari berita REAL via GNews (Anta / Li-Ning / Way of Wade / 361 Degrees / sneakers)
         2. Feed ke Gemini untuk diringkas & diterjemahkan ke bahasa Indonesia gaya Discord
         3. Kalau GNews gagal/tidak ada API key → fallback ke pure Gemini generate
         """
-        brands = ["Li-Ning", "Anta", "Li-Ning dan Anta"]
+        # 🔥 UPDATE: Fokus ke 3 brand utama + variasi sub-brand
+        brands = ["Anta", "Li-Ning", "Way of Wade", "361 Degrees"]
         chosen_brand = random.choice(brands)
 
         # --- Step A: Coba ambil berita real dari GNews ---
@@ -199,11 +200,13 @@ class ContentService:
                 body="*(Fitur AI sedang dinonaktifkan)*",
             )
 
+        # 🔥 UPDATE: Prompt lebih spesifik ke 3 brand utama + kolaborasi atlet yang relevan
         prompt = (
             f"Kamu adalah influencer sneakers yang update dengan tren global. "
             f"Buat 1 postingan menarik (maksimal 5 kalimat) tentang sepatu sport branded China, "
             f"khususnya **{brand}**. Bisa tentang: sejarah brand, teknologi terbaru, "
-            f"kolaborasi dengan atlet (contoh: Klay Thompson x Anta, Jimmy Butler x Li-Ning), "
+            f"kolaborasi dengan atlet (contoh: Klay Thompson x Anta, Jimmy Butler x Li-Ning, "
+            f"Dwyane Wade x Way of Wade, Aaron Gordon x 361 Degrees, Spencer Dinwiddie x 361 Degrees), "
             f"atau kenapa brand ini naik daun. Gunakan bahasa Indonesia yang asik, gaul tapi tetap informatif. "
             f"Tambahkan emoji yang pas. Jangan terlalu panjang, cocok untuk Discord."
         )
