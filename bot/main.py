@@ -1,67 +1,43 @@
-import asyncio
-import logging
 import discord
 from discord.ext import commands
-import aiohttp
 from bot.config import DISCORD_TOKEN
+from utils.logger import logger
+from db.database import db
 
-# 1. Konfigurasi Logging yang proper
-logging.basicConfig(
-    level=logging.INFO,
-    format='[{asctime}] [{levelname:<8}] {name}: {message}',
-    style='{',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-logger = logging.getLogger('discord')
-
-class ProductionBot(commands.Bot):
+class SportBot(commands.Bot):
     def __init__(self):
         super().__init__(
-            command_prefix='!',
-            intents=discord.Intents.default(), # Sesuaikan dengan kebutuhan
-            # Mengurangi load saat startup jika bot masuk di banyak server
-            chunk_guilds_at_startup=False 
+            command_prefix="!",
+            intents=discord.Intents.default(),
+            help_command=None
         )
-        # Sediakan aiohttp session global yang bisa dipakai di seluruh Cogs
-        self.session: aiohttp.ClientSession | None = None
 
     async def setup_hook(self):
-        """Dipanggil sekali saat bot mulai. Tempat terbaik untuk setup koneksi async."""
-        self.session = aiohttp.ClientSession()
-        logger.info("Global aiohttp session created.")
+        # Connect to MongoDB
+        await db.connect()
         
-        # Load cogs kamu di sini
-        await self.load_extension("cogs.admin")
-        await self.load_extension("cogs.reminders")
+        # Load cogs
+        cogs = ["cogs.admin", "cogs.reminders"]
+        for cog in cogs:
+            try:
+                await self.load_extension(cog)
+                logger.info(f"Loaded cog: {cog}")
+            except Exception as e:
+                logger.error(f"Failed to load cog {cog}: {e}")
 
-    async def close(self):
-        """Dipanggil saat bot dimatikan. Mencegah error 'Unclosed connection'."""
-        if self.session:
-            await self.session.close()
-            logger.info("Global aiohttp session closed.")
-        await super().close()
+        # Sync app commands (slash commands)
+        try:
+            await self.tree.sync()
+            logger.info("Synced slash commands globally.")
+        except Exception as e:
+            logger.error(f"Failed to sync slash commands: {e}")
 
     async def on_ready(self):
-        logger.info(f"Bot Ready! Logged in as {self.user} (ID: {self.user.id})")
+        logger.info(f"Bot is ready! Logged in as {self.user} (ID: {self.user.id})")
 
-
-async def main():
-    # 2. SETUP MONITORING EVENT LOOP (Penting!)
-    loop = asyncio.get_running_loop()
-    loop.set_debug(True)
-    # Jika ada kode yang memblokir loop lebih dari 0.5 detik, akan dicetak ke log!
-    loop.slow_callback_duration = 0.5 
-
-    bot = ProductionBot()
-    token = DISCORD_TOKEN
-    
-    # 3. Graceful runner
-    async with bot:
-        await bot.start(token)
+def main():
+    bot = SportBot()
+    bot.run(DISCORD_TOKEN)
 
 if __name__ == "__main__":
-    try:
-        # Menggunakan asyncio.run() menggantikan bot.run()
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Bot manually shut down.")
+    main()
