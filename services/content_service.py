@@ -91,7 +91,9 @@ class ContentService:
             hour = datetime.datetime.now(WITA_TZ).hour
 
         slot = self._hour_to_slot(hour)
+        return await self.get_content_for_slot(slot)
 
+    async def get_content_for_slot(self, slot: int) -> ContentItem:
         item: ContentItem
         match slot:
             case 0:
